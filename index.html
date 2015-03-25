@@ -1,0 +1,588 @@
+<!DOCTYPE HTML>
+
+<html>
+	<head>
+		<title>Circular Pong</title>
+		
+		<link href='http://fonts.googleapis.com/css?family=Oswald:700' rel='stylesheet' type='text/css'>
+		
+		<style>
+			body {
+				background-color: #202020;
+				height: 100%;
+				width: 100%;
+				background-attachment: fixed;
+			}
+			
+			#canvas:-webkit-full-screen { background-color: rgba(255,255,255,0); }
+			
+			#canvas {
+				margin: auto; position: absolute;
+				top: 0; bottom: 0; right: 0; left: 0;
+				
+				cursor: none;
+			}
+			
+			#togglehowtoplay {
+				background-color: #303030;
+				border-radius: 4px;
+				position: fixed;
+				top: 10px;
+				left: 10px;
+				
+				padding: 10px;
+				font-size: 30px;
+				width: 40px;
+				height: 40px;
+				text-align: center;
+				font-family: Oswald;
+				color: #C0C0C0;
+				
+				cursor: pointer;
+			}
+			
+			#togglehowtoplay:hover {
+				background-color: #404040;
+			}
+			
+			#howtoplay {
+				background-color: #303030;
+				border-radius: 4px;
+				position: fixed;
+				top: 10px;
+				left: -300px;
+				
+				padding: 10px;
+				font-size: 15px;
+				font-family: Oswald;
+				color: #C0C0C0;
+			}
+			
+			#howtoplay a {
+				color: #FF6000;
+				
+			}
+		</style>
+		
+		<script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+		
+		<script>
+			//PARAMETERS
+			
+			//////////////////////////
+			// Graphics parameters  //
+			//////////////////////////
+			
+			//Radius factor: field radius = canvas.height * radiusFactor
+			var radiusFactor = 0.40;
+			
+			//Field color: the background color of the circular game field
+			var fieldColor = "#303030";
+			
+			//Color of the field border
+			var borderColor = "#202020";
+			
+			//Lines color: used for middle field line
+			var linesColor = "#303030";
+			
+			//Width of the middle line, in pixels
+			var linesWidth = 8;
+			
+			//Colors of the two paddles
+			var paddleColors = ["#FF6000", "#0060FF"];
+			
+			//Thickness of the two paddles. Editing this affects the thickness
+			//of the field border as well
+			var paddleThick = 30;
+			
+			//Color of the middle-field bouncers
+			var bouncersColor = "#404040";
+			
+			//Color of the ball
+			var ballColor = "#FCFFA3";
+			
+			//Radius of the ball
+			var ballSize = 12;
+			
+			//Standard size (in pixels) of the score labels
+			var scoresizeBase = 96;
+
+			//Maximum size variation (in pixels) of the score labels on zoom effect
+			var scoreZoomVal = 8;		
+
+			//Score label color
+			var scoreColor = "#FCFFA3";
+			
+			//Width of the screen shake effect
+			var screenshakeWidth = 10;
+			
+			//////////////////////////
+			//  Physics parameters  //
+			//////////////////////////
+			
+			//Force that players can apply to paddles
+			var paddleForce = 8;
+			
+			//Paddle damping: higher values means lower maximum speed and less inertia
+			var paddleDamping = 3.5;
+			
+			//Paddle bounce factor: paddle speed becomes -omega * factor when hitting the
+			//field bounds
+			var paddleBounceFactor = 0.75;
+			
+			//Ball speed, in pixels per second
+			var ballSpeed = 300;
+			
+			//Ball accleleration, in pixels per square second
+			var ballAcceleration = 15;
+			
+			
+			
+			//Coefficient applied to paddle angular speed to give an effect to ball
+			//after impact (need better explanation!). Higher values means that the
+			//ball suffers more significant direction variation upon impact
+			var k = 0.2;
+			
+			//////////////////////////
+			//  Game parameters     //
+			//////////////////////////
+			
+			//Amplitude (in radians) of the middle-field bouncers
+			var bouncersWidth = Math.PI / 6;
+			
+			//Ball speed minimum angle
+			var ballMinAngle = Math.PI / 4;
+			
+			//Paddle base width
+			var paddleBaseWidth = Math.PI / 6;
+			
+			//Paddle width factor: width is reduced/increased by this factor * deltascore
+			var paddleWidthFactor = Math.PI / 120;
+			
+			//Minimum paddle width
+			var paddleMinWidth = Math.PI / 18;
+			
+			//Frames per second
+			var fps = 60;
+		</script>
+		
+		<script>
+			var bgColor;
+			var canvas, context;
+			
+			var screenshake = 0;			
+			var screenshakeBegin = -1;		
+			
+			var score1size = 96, score2size = 96;
+			var score1zoom = -1, score2zoom = -1;
+			
+			var radius;
+			
+			var vRotate = function ( v, angle ) {
+				var w = v.slice(0);
+				v[0] = w[0] * Math.cos(angle) - w[1] * Math.sin(angle);
+				v[1] = w[0] * Math.sin(angle) + w[1] * Math.cos(angle);
+			}
+			
+			var vSetAngle = function ( v, angle ) {
+				var module = Math.sqrt ( v[0] * v[0] + v[1] * v[1] );
+				v[0] = module * Math.cos(angle);
+				v[1] = module * Math.sin(angle);
+			}
+			
+			var Paddle = function () {
+				this.width = 0;
+				this.targetWidth = paddleBaseWidth;
+				
+				this.color = "#FF6000";
+				
+				this.theta = Math.PI / 6;
+				this.omega = 0;
+				this._alpha = 0;
+				this.alpha = 0;
+				this.damping = paddleDamping;
+				
+				this.bounds = [ 0, Math.PI ];
+				
+				this.step = function ( t ) {
+					this.alpha = this._alpha - this.damping * this.omega;
+					this.theta += this.omega * t + 0.5 * this.alpha * t * t;
+					this.omega += this.alpha * t;
+					
+					if ( this.theta - this.width / 2 < this.bounds[0] ) {
+						this.theta = this.bounds[0] + this.width / 2;
+						this.omega *= -paddleBounceFactor;
+					}
+					
+					if ( this.theta + this.width / 2 > this.bounds[1] ) {
+						this.theta = this.bounds[1] - this.width / 2;
+						this.omega *= -paddleBounceFactor;
+					}
+					
+					this.width += (this.targetWidth - this.width) * Math.sqrt(t);
+				}
+				
+				this.draw = function ( context, centerx, centery, radius ) {
+					context.beginPath();
+					context.arc ( centerx, centery, radius, this.theta - this.width / 2, this.theta + this.width / 2 );
+					context.arc ( centerx, centery, radius - paddleThick, this.theta + this.width / 2, this.theta - this.width / 2, 1 );
+					
+					context.fillStyle = this.color;
+					context.fill ();
+				}
+			}
+	
+			var Ball = function () {
+				this.position = [0,0];
+				this.speed = [0,0];
+				this.moving = 0;
+				this.collided = 0;
+				
+				this.draw = function ( context, centerx, centery ) {
+					context.fillStyle = ballColor;
+					context.beginPath();
+					context.arc ( centerx + this.position[0], centery + this.position[1], ballSize, 0, 2 * Math.PI );
+					context.fill();
+					
+					context.beginPath();
+					context.strokeStyle = ballColor;
+					context.stroke();
+				}
+				
+				this.step = function ( t, match ) {
+					if ( !this.moving ) return;
+					
+					var v = Math.sqrt ( this.speed[0] * this.speed[0] + this.speed[1] * this.speed[1] );
+					var ax = ballAcceleration * this.speed[0] / v;
+					var ay = ballAcceleration * this.speed[1] / v;
+					
+					this.position [0] += this.speed[0] * t + 0.5 * ax * t * t;
+					this.position [1] += this.speed[1] * t + 0.5 * ay * t * t;
+					
+					this.speed[0] += ax * t;
+					this.speed[1] += ay * t;
+					
+					var d = Math.sqrt ( this.position[0] * this.position[0] + this.position[1] * this.position[1] );
+					var a = Math.PI - Math.atan2 ( this.position[1], -this.position[0] );
+					var dir = Math.PI - Math.atan2 ( this.speed[1], this.speed[0] );
+					v = Math.sqrt ( this.speed[0] * this.speed[0] + this.speed[1] * this.speed[1] );
+					
+					if ( d >= radius ) {
+						match.ballOut();
+					}
+					
+					else if ( d + ballSize >= radius - paddleThick && d - ballSize <= radius - paddleThick && this.speed[0] * this.position[0] + this.speed[1] * this.position[1] > 0 ) {
+						var ballw = Math.atan(ballSize / d);
+						this.collided = 0;
+						
+						var vdotr = this.speed[0] * this.position[0] + this.speed[1] * this.position[1];
+						var rdotr = d*d;
+						
+						if ( Math.abs ( match.paddle1.theta - (a - ballw) ) <= match.paddle1.width / 2
+							|| Math.abs ( match.paddle1.theta - (a + ballw) ) <= match.paddle1.width / 2 ) {
+							
+							this.speed[0] = -2 * vdotr / rdotr * this.position[0] + this.speed[0];
+							this.speed[1] = -2 * vdotr / rdotr * this.position[1] + this.speed[1];
+							
+							vRotate ( this.speed, -k * match.paddle1.omega );
+							
+							this.position[0] = this.position[0] / d * (radius - paddleThick - ballSize);
+							this.position[1] = this.position[1] / d * (radius - paddleThick - ballSize);
+							
+							this.collided = 1;
+						}
+						
+						if ( !this.collided && Math.abs ( match.paddle2.theta - (a - ballw) ) <= match.paddle2.width / 2
+							|| Math.abs ( match.paddle2.theta - (a + ballw) ) <= match.paddle2.width / 2 ) {
+							
+							this.speed[0] = -2 * vdotr / rdotr * this.position[0] + this.speed[0];
+							this.speed[1] = -2 * vdotr / rdotr * this.position[1] + this.speed[1];
+							
+							vRotate ( this.speed, -k * match.paddle2.omega );
+							
+							this.position[0] = this.position[0] / d * (radius - paddleThick - ballSize);
+							this.position[1] = this.position[1] / d * (radius - paddleThick - ballSize);
+							
+							this.collided = 1;
+						}
+						
+						if ( !this.collided && ((a - ballw < bouncersWidth / 2 || a - ballw > 2 * Math.PI - bouncersWidth / 2 || Math.abs(Math.PI - (a - ballw)) < bouncersWidth / 2) ||
+							(a + ballw < bouncersWidth / 2 || a + ballw > 2 * Math.PI - bouncersWidth / 2 || Math.abs(Math.PI - (a + ballw)) < bouncersWidth / 2) )) {
+							
+							this.speed[0] = -2 * vdotr / rdotr * this.position[0] + this.speed[0];
+							this.speed[1] = -2 * vdotr / rdotr * this.position[1] + this.speed[1];
+							
+							this.position[0] = this.position[0] / d * (radius - paddleThick - ballSize);
+							this.position[1] = this.position[1] / d * (radius - paddleThick - ballSize);
+							
+							this.collided = 1;
+						}
+						
+						if ( this.collided ) {
+							vdotr = this.speed[0] * this.position[0] + this.speed[1] * this.position[1];
+							rdotr = d*d;
+						
+							var minvr = v * Math.sin(ballMinAngle);
+							var vr = [ vdotr / rdotr * this.position[0], vdotr / rdotr * this.position[1] ];
+							var modvr = Math.sqrt ( vr[0] * vr[0] + vr[1] * vr[1] );
+							
+							if ( modvr < minvr ) {
+								var imod = v * Math.tan(ballMinAngle) - modvr;
+								var i = [ -this.position[0] * imod / d, -this.position[1] * imod / d ];
+								
+								this.speed[0] += i[0];
+								this.speed[1] += i[1];
+								
+								var newv = Math.sqrt ( this.speed[0] * this.speed[0] + this.speed[1] * this.speed[1] );
+								this.speed[0] *= v / newv;
+								this.speed[1] *= v / newv;
+							}
+						}
+					}	
+				}
+			}
+	
+			var Match = function () {
+				this.paddle1 = new Paddle();
+				this.paddle2 = new Paddle();
+				
+				this.score1 = 0;
+				this.score2 = 0;
+				
+				this.ball = new Ball();
+				
+				this.draw = function ( context, centerx, centery, radius ) {
+					this.paddle1.draw ( context, centerx, centery, radius );
+					this.paddle2.draw ( context, centerx, centery, radius );
+					this.ball.draw ( context, centerx, centery );
+					
+					context.fillStyle = bouncersColor;
+					
+					context.beginPath();
+					context.arc ( centerx, centery, radius, bouncersWidth / 2, 2*Math.PI - bouncersWidth / 2, 1 );
+					context.arc ( centerx, centery, radius - paddleThick, 2 * Math.PI - bouncersWidth / 2, bouncersWidth / 2, 0 );
+					context.fill();
+					
+					context.beginPath();
+					context.arc ( centerx, centery, radius, Math.PI + bouncersWidth / 2, 3*Math.PI - bouncersWidth / 2, 1 );
+					context.arc ( centerx, centery, radius - paddleThick, 3 * Math.PI - bouncersWidth / 2, Math.PI + bouncersWidth / 2, 0 );
+					context.fill();
+				}
+				
+				this.setup = function () {
+					this.paddle1.theta = Math.PI / 2;
+					this.paddle1.color = paddleColors[0];
+					this.paddle1.width = 0;					
+					this.paddle1.omega = 0;
+					this.paddle1.alpha = 0;
+					this.paddle1.bounds = [ bouncersWidth / 2, Math.PI - bouncersWidth / 2 ];
+					
+					this.paddle2.theta = 3 * Math.PI / 2;			
+					this.paddle2.color = paddleColors[1];
+					this.paddle2.width = 0;
+					this.paddle2.omega = 0;
+					this.paddle2.alpha = 0;
+					this.paddle2.bounds = [ Math.PI + bouncersWidth / 2, 2 * Math.PI - bouncersWidth / 2 ];
+					
+					this.score1 = 0;
+					this.score2 = 0;
+					
+					this.adjustWidths();
+					
+					this.ball.position = [0,0];
+					this.ball.speed = [0,0];
+					this.ball.moving = 0;
+				}
+				
+				this.step = function ( t ) {					
+					this.paddle1.step ( t );
+					this.paddle2.step ( t );
+					this.ball.step ( t, this );
+				}
+				
+				this.ballOut = function () {
+					shake();
+					
+					var a = Math.PI - Math.atan2 ( this.ball.position[1], -this.ball.position[0] );
+					
+					if ( a > this.paddle1.bounds[0] && a < this.paddle1.bounds[1] ) { this.score2++; zoom2(); this.adjustWidths(); this.paddle1.width = 0; }
+					if ( a > this.paddle2.bounds[0] && a < this.paddle2.bounds[1] ) { this.score1++; zoom1(); this.adjustWidths(); this.paddle2.width = 0; }
+					
+					this.ball.position = [0,0];
+					this.ball.speed = [0,0];
+					this.ball.moving = 0;
+				}
+				
+				this.adjustWidths = function () {
+					this.paddle1.targetWidth = paddleBaseWidth + paddleWidthFactor * (this.score2 - this.score1);
+					if ( this.paddle1.targetWidth < paddleMinWidth ) this.paddle1.targetWidth = paddleMinWidth;
+					if ( this.paddle1.targetWidth > (Math.PI - bouncersWidth) / 3 ) this.paddle1.targetWidth = (Math.PI - bouncersWidth) / 3;
+					
+					this.paddle2.targetWidth = paddleBaseWidth + paddleWidthFactor * (this.score1 - this.score2);
+					if ( this.paddle2.targetWidth < paddleMinWidth ) this.paddle2.targetWidth = paddleMinWidth;
+					if ( this.paddle2.targetWidth > (Math.PI - bouncersWidth) / 3 ) this.paddle2.targetWidth = (Math.PI - bouncersWidth) / 3;
+				}
+			}
+			
+			var match = new Match ();
+			
+			var setup = function () {
+				canvas = document.getElementById ( "canvas" );
+				context = canvas.getContext ( "2d" );
+				
+				radius = Math.max ( canvas.width, canvas.height ) * radiusFactor;
+				
+				setInterval ( draw, 1000 / fps );
+				setInterval ( update, 1000 / fps );
+				
+				match.setup();
+				
+				registerKey ( "p1l", 37 );
+				registerKey ( "p1r", 39 );
+				registerKey ( "p2l", 65 );
+				registerKey ( "p2r", 68 );
+				registerKey ( "shoot", 13 );
+				registerKey ( "shoot", 32 );
+				registerKey ( "reset", 82 );
+				
+				bgColor = $("body").css("background-color");
+				
+				$("#howtoplay").on ( 'mousedown', function () {
+					var htp = document.getElementById("howtoplay");
+					
+					if ( htp.toggle == 0) return;
+
+					htp.toggle = 0;
+					$(htp).animate ( { left: '-300px' }, 150 );
+				} );
+				
+				$("#togglehowtoplay").on ( 'mouseup', function () {
+					var htp = document.getElementById("howtoplay");
+					
+					if ( htp.toggle ) return;					
+					
+					htp.toggle = 1;
+					$(htp).animate ( { left: '10px' }, 150 );
+				} );
+			}
+			
+			var draw = function () {
+				context.translate ( screenshake, 0 );
+				
+				context.fillStyle = bgColor;
+				context.fillRect ( 0, 0, canvas.width, canvas.height );
+				
+				context.fillStyle = borderColor;
+				context.beginPath();
+				context.arc ( canvas.width / 2, canvas.height / 2, radius, 0, 2 * Math.PI );
+				context.fill();
+				
+				context.fillStyle = fieldColor;
+				context.beginPath();
+				context.arc ( canvas.width / 2, canvas.height / 2, radius - paddleThick, 0, 2 * Math.PI );
+				context.fill();
+				
+				context.fillStyle = linesColor;
+				context.fillRect ( canvas.width / 2 - radius, canvas.height / 2 - linesWidth / 2, 2 * radius, linesWidth );
+				
+				match.draw ( context, canvas.width / 2, canvas.height / 2, radius );
+				
+				context.fillStyle = scoreColor;
+				context.font = score2size + "px Oswald";
+				context.textAlign = "start";
+				context.fillText ( match.score2, 10, 10 + score2size );
+				
+				context.font = score1size + "px Oswald";
+				context.textAlign = "end";
+				context.fillText ( match.score1, canvas.width - 10, canvas.height - 10 );
+				
+				context.translate ( -screenshake, 0 );
+			}
+			
+			var update = function () {
+				if ( key("p1l") ) match.paddle1._alpha = paddleForce;
+				else if ( key("p1r") ) match.paddle1._alpha = -paddleForce;
+				else match.paddle1._alpha = 0;
+				
+				if ( key("p2l") ) match.paddle2._alpha = -paddleForce;
+				else if ( key("p2r") ) match.paddle2._alpha = paddleForce;
+				else match.paddle2._alpha = 0;
+				
+				if ( key("shoot") && !match.ball.moving ) {
+					if ( Math.random() > 0.5 ) match.ball.speed[1] = -ballSpeed;
+					else match.ball.speed[1] = ballSpeed;
+					
+					match.ball.moving = 1;
+				}
+				
+				if ( key("reset") ) {
+					match.setup();
+				}
+				
+				match.step ( 1 / fps );
+				
+				if ( screenshakeBegin > 0 ) {
+					var t = Date.now() - screenshakeBegin;
+					screenshake = screenshakeWidth * Math.exp(- t / 150 ) * ( Math.sin(t/30) + Math.cos(t/30) );
+				}
+				
+				if ( score1zoom > 0 ) {
+					var t = Date.now() - score1zoom;
+					score1size = scoresizeBase + scoreZoomVal * Math.exp(- t / 150 ) * ( Math.sin(t/30) + Math.cos(t/30) );
+				}
+				
+				if ( score2zoom > 0 ) {
+					var t = Date.now() - score2zoom;
+					score2size = scoresizeBase + scoreZoomVal * Math.exp(- t / 150 ) * ( Math.sin(t/30) + Math.cos(t/30) );
+				}
+			}
+			
+			var shake = function () { screenshakeBegin = Date.now(); }
+			
+			var zoom1 = function () { score1zoom = Date.now(); }
+			var zoom2 = function () { score2zoom = Date.now(); }
+			
+			var keys = new Array();			
+			var registerKey = function ( n, k ) { keys.push ( { name: n, key: k, state: undefined } ); };
+			
+			var key = function ( name ) {
+				var result = 0;
+				for ( i = 0; i < keys.length; i++ )
+					if ( keys[i].name == name ) result = result || keys[i].state;
+				return result;
+			}
+			
+			document.onkeydown = function ( e ) {
+				for ( var i = 0; i < keys.length; i++ )
+					if ( e.which == keys[i].key ) keys[i].state = 1;
+			}
+			
+			document.onkeyup = function ( e ) {
+				for ( var i = 0; i < keys.length; i++ )
+					if ( e.which == keys[i].key ) keys[i].state = 0;
+			}
+		</script>
+	</head>
+	
+	<body onload="setup()" id="body">
+		<canvas width="600" height="600" id="canvas"></canvas>
+		
+		<div id="togglehowtoplay" title="How to play">?</div>
+		
+		<div id="howtoplay">
+			<span style="font-size: 28px">CPong</span><br><br>
+			Don't let the ball out of the circle.<br><br>
+			<span style="font-size: 20px">Controls</span><br>
+			&nbsp;&nbsp;Player 1 (red): arrow keys<br>
+			&nbsp;&nbsp;Player 2 (blue): W/D<br>
+			&nbsp;&nbsp;R: reset match<br><br>
+			<span style="font-size: 20px">Credits</span><br>
+			&nbsp;&nbsp;Design by<br>
+			&nbsp;&nbsp;&nbsp;&nbsp;Michele 'Buch' Bucelli<br>
+			&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(twitter <a href="https://twitter.com/michelebucelli">@michelebucelli</a>)<br>
+			&nbsp;&nbsp;&nbsp;&nbsp;Luca Fogli<br><br>
+			&nbsp;&nbsp;Code by Michele 'Buch' Bucelli<br><br>
+			<span style="font-size: 12px; color: #606060; text-align: center; width: calc(100% - 10px); display: inline-block;">(click on panel to dismiss)</span>
+		</div>
+	</body>
+</html>
