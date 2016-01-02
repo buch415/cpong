@@ -192,7 +192,6 @@
 
 			var radius;
 			var bouncerRadius;
-			var bouncerRadiusMod = 1;
 
 			var vRotate = function ( v, angle ) {
 				var w = v.slice(0);
@@ -356,7 +355,7 @@
 						}
 					}
 
-					else if ( d - ballSize <= bouncerRadius * bouncerRadiusMod ) {
+					else if ( d - ballSize <= bouncerRadius ) {
 						vdotr = this.speed[0] * this.position[0] + this.speed[1] * this.position[1];
 						rdotr = d*d;
 
@@ -364,10 +363,8 @@
 							this.speed[0] = -2 * vdotr / rdotr * this.position[0] + this.speed[0];
 							this.speed[1] = -2 * vdotr / rdotr * this.position[1] + this.speed[1];
 
-							bouncerRadiusMod -= 0.2;
-
-							this.position[0] = this.position[0] / d * (bouncerRadius * bouncerRadiusMod + ballSize);
-							this.position[1] = this.position[1] / d * (bouncerRadius * bouncerRadiusMod + ballSize);
+							this.position[0] = this.position[0] / d * (bouncerRadius + ballSize);
+							this.position[1] = this.position[1] / d * (bouncerRadius + ballSize);
 
 						}
 					}
@@ -401,7 +398,7 @@
 					context.fill();
 
 					context.beginPath();
-					context.arc ( centerx, centery, bouncerRadius * bouncerRadiusMod, 0, 2 * Math.PI );
+					context.arc ( centerx, centery, bouncerRadius, 0, 2 * Math.PI );
 					context.fill();
 				}
 
