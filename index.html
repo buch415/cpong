@@ -75,7 +75,7 @@
 		  ga('create', 'UA-38383090-6', 'auto');
 		  ga('send', 'pageview');
 
-		</script>
+	  </script>
 
 		<script>
 			//PARAMETERS
@@ -174,7 +174,7 @@
 			var paddleMinWidth = Math.PI / 18;
 
 			//Central bouncer radius (percentage of field radius) (0 = off)
-			var bouncerRadiusFactor = 0.2;
+			var bouncerRadiusFactor = 0.1;
 
 			//Frames per second
 			var fps = 60;
@@ -400,6 +400,11 @@
 					context.beginPath();
 					context.arc ( centerx, centery, bouncerRadius, 0, 2 * Math.PI );
 					context.fill();
+
+					context.fillStyle = borderColor;
+					context.beginPath();
+					context.arc ( centerx, centery, bouncerRadius - paddleThick, 0, 2 * Math.PI );
+					context.fill();
 				}
 
 				this.setup = function () {
@@ -444,8 +449,6 @@
 					this.ball.position = [0,0];
 					this.ball.speed = [0,0];
 					this.ball.moving = 0;
-
-					bouncerRadiusMod = 1;
 				}
 
 				this.adjustWidths = function () {
@@ -571,8 +574,6 @@
 					var t = Date.now() - score2zoom;
 					score2size = scoresizeBase + scoreZoomVal * Math.exp(- t / 150 ) * ( Math.sin(t/30) + Math.cos(t/30) );
 				}
-
-				if ( bouncerRadiusMod < 1 ) bouncerRadiusMod += 0.05 * (Math.exp(1 - bouncerRadiusMod));
 			}
 
 			var shake = function () { screenshakeBegin = Date.now(); }
